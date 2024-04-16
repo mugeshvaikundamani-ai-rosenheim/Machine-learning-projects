@@ -3,18 +3,23 @@ import requests
 import secrets
 import Database as db
 import joblib
+from Api_key_encryption import sha256
 
 model = joblib.load('Models/model_exam_score.joblib')
 
 app = Flask(__name__)
 
+@app.errorhandler(404)
+def not_found_error():
+    return "Error 404: Not Found", 404
 
 @app.route("/v2/<api_key>", methods=['GET'])
 def index(api_key):
-    Api = db.cursor.execute("SELECT COUNT(*) FROM Version2Api WHERE api_key = ?", (api_key,)).fetchone()[0]
+    Hashed_api_key = sha256(api_key)
+    Api = db.cursor.execute("SELECT COUNT(*) FROM Version2Api WHERE api_key = ?", (Hashed_api_key,)).fetchone()[0]
  
     if Api == 1:
-        Allowed = db.cursor.execute(f"SELECT Allowed FROM Version2Api WHERE api_key = '{api_key}'").fetchone()[0]
+        Allowed = db.cursor.execute(f"SELECT Allowed FROM Version2Api WHERE api_key = '{Hashed_api_key}'").fetchone()[0]
         if Allowed==None:
             Data_1 = request.form.get('Score_1')
             Data_2 = request.form.get('Score_2')
@@ -23,15 +28,15 @@ def index(api_key):
         
             pred = model.predict([[Data_1, Data_2]])
 
-            Api_requests = db.cursor.execute(f"SELECT Api_requests FROM Version2Api WHERE Api_key='{api_key}'").fetchone()[0]
+            Api_requests = db.cursor.execute(f"SELECT Api_requests FROM Version2Api WHERE Api_key='{Hashed_api_key}'").fetchone()[0]
 
             print(Api_requests)
             if Api_requests == None :
-                db.cursor.execute(f"UPDATE Version2Api SET Api_requests = 1 WHERE Api_key = '{api_key}'")
+                db.cursor.execute(f"UPDATE Version2Api SET Api_requests = 1 WHERE Api_key = '{Hashed_api_key}'")
                 db.cnxn.commit()
             else :
                 Api_requests = int(Api_requests)+1
-                db.cursor.execute(f"UPDATE Version2Api SET Api_requests = {Api_requests} WHERE Api_key = '{api_key}'")
+                db.cursor.execute(f"UPDATE Version2Api SET Api_requests = {Api_requests} WHERE Api_key = '{Hashed_api_key}'")
                 db.cnxn.commit()
             
         else:
@@ -64,12 +69,14 @@ def  addnew():
         users = [row[0] for row in user.fetchall()]
         if User_id in users:
             Api_key = secrets.token_urlsafe(11) + '-' + secrets.token_urlsafe(7)
-            db.cursor.execute(f"UPDATE Version2Api SET Api_key='{Api_key}' WHERE user_id='{User_id}'")
+            Hashed_api = sha256(Api_key)
+            db.cursor.execute(f"UPDATE Version2Api SET Api_key='{Hashed_api}' WHERE user_id='{User_id}'")
             db.cnxn.commit()
             return {'api': Api_key, 'user': User_id}
         else:
             Api_key = secrets.token_urlsafe(11) + '-' + secrets.token_urlsafe(7)
-            db.cursor.execute(f"INSERT INTO Version2Api (user_id, Api_key) VALUES ('{User_id}', '{Api_key}')")
+            Hashed_api = sha256(Api_key)
+            db.cursor.execute(f"INSERT INTO Version2Api (user_id, Api_key) VALUES ('{User_id}', '{Hashed_api}')")
             db.cnxn.commit()
             return {'api': Api_key, 'user': User_id}
 
