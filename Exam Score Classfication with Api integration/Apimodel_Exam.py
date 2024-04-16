@@ -10,8 +10,11 @@ model = joblib.load('Models/model_exam_score.joblib')
 app = Flask(__name__)
 
 @app.errorhandler(404)
-def not_found_error():
-    return "Error 404: Not Found", 404
+def not_found_error(error):
+    return {
+        'Status':"Error 404: Not Found"
+        ,'Type':404
+    }
 
 @app.route("/v2/<api_key>", methods=['GET'])
 def index(api_key):
@@ -32,11 +35,11 @@ def index(api_key):
 
             print(Api_requests)
             if Api_requests == None :
-                db.cursor.execute(f"UPDATE Version2Api SET Api_requests = 1 WHERE Api_key = '{Hashed_api_key}'")
+                db.cursor.execute(f"UPDATE Version2Api SET Api_requests = 1 , ip_address='{request.environ['REMOTE_ADDR']}' WHERE Api_key = '{Hashed_api_key}' ")
                 db.cnxn.commit()
             else :
                 Api_requests = int(Api_requests)+1
-                db.cursor.execute(f"UPDATE Version2Api SET Api_requests = {Api_requests} WHERE Api_key = '{Hashed_api_key}'")
+                db.cursor.execute(f"UPDATE Version2Api SET Api_requests = {Api_requests} , ip_address='{request.environ['REMOTE_ADDR']}'  WHERE Api_key = '{Hashed_api_key}'")
                 db.cnxn.commit()
             
         else:
@@ -57,28 +60,47 @@ def index(api_key):
         return "Invalid API key", 401
 
 
-@app.route("/v2/api", methods=['GET'])
 
-def  addnew():
+
+@app.route("/v2/api", methods=['GET'])
+def addnew():
     User_id = request.headers.get('User-ID')
+    api_count = db.cursor.execute(f"SELECT api_generateCount FROM Version2Api WHERE user_id='{User_id}'").fetchone()[0]
     User_id = User_id.lower()
-    if  not User_id :
-        return {'user':''},401
-    else :
-        user = db.cursor.execute('Select user_id from Version2Api')
+
+    if not User_id:
+        return {'user': ''}, 401
+    else:
+        user = db.cursor.execute('SELECT user_id FROM Version2Api')
         users = [row[0] for row in user.fetchall()]
+        
         if User_id in users:
             Api_key = secrets.token_urlsafe(11) + '-' + secrets.token_urlsafe(7)
             Hashed_api = sha256(Api_key)
-            db.cursor.execute(f"UPDATE Version2Api SET Api_key='{Hashed_api}' WHERE user_id='{User_id}'")
+            db.cursor.execute(f"UPDATE Version2Api SET Api_key='{Hashed_api}', ip_address='{request.environ['REMOTE_ADDR']}' WHERE user_id='{User_id}'")
             db.cnxn.commit()
+            update_api_count(api_count, User_id)
             return {'api': Api_key, 'user': User_id}
         else:
             Api_key = secrets.token_urlsafe(11) + '-' + secrets.token_urlsafe(7)
             Hashed_api = sha256(Api_key)
-            db.cursor.execute(f"INSERT INTO Version2Api (user_id, Api_key) VALUES ('{User_id}', '{Hashed_api}')")
+            db.cursor.execute(f"INSERT INTO Version2Api (user_id, Api_key, ip_address) VALUES ('{User_id}', '{Hashed_api}', '{request.environ['REMOTE_ADDR']}')")
             db.cnxn.commit()
+            update_api_count(api_count, User_id)
             return {'api': Api_key, 'user': User_id}
+
+def update_api_count(api_count, User_id):
+    if api_count is None:
+        db.cursor.execute(f"UPDATE Version2Api SET api_generateCount=1 WHERE user_id='{User_id}'")
+        db.cnxn.commit()
+        return 0
+    else:
+        api_count = api_count + 1
+        db.cursor.execute(f"UPDATE Version2Api SET api_generateCount={api_count} WHERE user_id='{User_id}'")
+        db.cnxn.commit()
+        return api_count
+
+
 
 
 
